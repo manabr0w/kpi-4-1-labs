@@ -1,0 +1,53 @@
+name: lab1adv
+
+services:
+  db:
+    image: redis:7.4.12-alpine@sha256:7f7d30b7fdd09467bac58198a1f166dd69789d348d4fe859cccb20e0cf287fbe
+    networks: [backend]
+    healthcheck:
+      # DB_HC_PORT=1 навмисно ламає перевірку, щоб показати роботу depends_on.
+      test: ["CMD", "redis-cli", "-p", "${DB_HC_PORT:-6379}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 3s
+
+  app:
+    build: ./app
+    image: lab1-app:1.0
+    environment:
+      DB_HOST: db
+    networks: [frontend, backend]
+    deploy:
+      replicas: 2
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  proxy:
+    image: nginx:1.30.7-alpine@sha256:caf4e1e032a20f9c3c5e28fc7f25ffd768ad8677b4975c54193075997b3a97e3
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks: [frontend]
+    depends_on:
+      app:
+        condition: service_healthy
+
+networks:
+  frontend:
+    name: lab1-frontend
+    ipam:
+      config: [{ subnet: 172.28.1.0/24, gateway: 172.28.1.1 }]
+  backend:
+    name: lab1-backend
+    internal: true  # без виходу назовні: базі даних інтернет не потрібен
+    ipam:
+      config: [{ subnet: 172.28.2.0/24, gateway: 172.28.2.1 }]
